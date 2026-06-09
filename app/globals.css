@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  background: #000;
+  color: #F0EEEA;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Hollow pill with a 65deg periwinkle->red gradient STROKE.
+   Trick: two backgrounds stacked, one for the interior (padding-box),
+   one for the border (border-box). The transparent border becomes the
+   visible gradient ring. */
+.gradient-pill {
+  position: relative;
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(#000, #000) padding-box,
+    linear-gradient(65deg, #625CC8 0%, #D52F31 100%) border-box;
+  border-radius: 9999px;
+  color: #F0EEEA;
+  transition: filter 150ms, background 150ms;
+}
+.gradient-pill:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.gradient-pill:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+.gradient-pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Filled variant — same gradient but as the BACKGROUND. */
+.gradient-fill {
+  background: linear-gradient(65deg, #625CC8 0%, #D52F31 100%);
+  color: #F0EEEA;
+  border-radius: 9999px;
+  border: none;
+  transition: filter 150ms;
+}
+.gradient-fill:hover:not(:disabled) { filter: brightness(1.1); }
+.gradient-fill:active:not(:disabled) { filter: brightness(0.9); }
+.gradient-fill:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* SMS bubbles — both hollow on pure black. Outbound = gradient stroke, inbound = subtle gray. */
+.bubble-stroke-gradient {
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(#000, #000) padding-box,
+    linear-gradient(65deg, #625CC8 0%, #D52F31 100%) border-box;
+}
+.bubble-stroke-muted {
+  border: 1.5px solid #2C2C36;
+  background: #000;
+}
+
+/* Page transition — opacity-only crossfade on every navigation (see app/template.tsx). */
+@keyframes pageFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.page-fade {
+  animation: pageFade 240ms ease-out;
+  will-change: opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-fade { animation: none; }
+}
+
+/* Memory-graph placeholder — drifting dots + fading labels (see nillad-graph.tsx). */
+@keyframes nfDrift {
+  0%, 100% { transform: translate(0, 0); opacity: 0.8; }
+  50%      { transform: translate(2px, -3px); opacity: 1; }
+}
+.nf-drift { animation: nfDrift 6s ease-in-out infinite; }
+@keyframes nfLabel {
+  0%, 100% { opacity: 0; }
+  25%, 60% { opacity: 0.9; }
+}
+.nf-label { animation: nfLabel 9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .nf-drift { animation: none; }
+  .nf-label { animation: none; opacity: 0.9; }
+}
+
+/* Bottom-sheet rise (components/sheet.tsx) */
+@keyframes sheetUp {
+  from { transform: translateY(8%); opacity: 0.4; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Quiet scrollbar */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: #1F1F26;
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #2C2C36; }

@@ -1,0 +1,32 @@
+# Nillad dashboard — joins the local stack alongside OWUI / n8n / ntfy.
+#   docker compose up -d --build      (build + start)
+#   docker compose logs -f            (watch)
+#   docker compose down               (stop, keeps data — DB lives in the vault)
+services:
+  nillad-dashboard:
+    build:
+      context: .
+    image: nillad-dashboard:latest
+    container_name: nillad-dashboard
+    restart: unless-stopped
+    # Run as root so writes to the root-owned bind-mounted /vault/nillad.db
+    # work — same tradeoff n8n makes for the shared SQLite file.
+    user: "0:0"
+    ports:
+      - "3100:3100"
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Denver
+      - NILLAD_DB=/vault/nillad.db
+      - N8N_SEND_SMS_WEBHOOK=http://host.docker.internal:5678/webhook/nillad-send-sms
+      - NF_SESSION_SECRET=${NF_SESSION_SECRET}
+      # Native Nillad chat: the dashboard talks DIRECTLY to Ollama and runs the
+      # function-calling tool loop itself (see lib/agent.ts). No OWUI in the path.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - NILLAD_OLLAMA_MODEL=${NILLAD_OLLAMA_MODEL:-gemma4:12b-it-qat}
+    volumes:
+      # Shared vault — same host path n8n & OWUI mount, so the DB is one file.
+      # Override the host path with NILLAD_VAULT in your .env if your layout differs.
+      - ${NILLAD_VAULT:-C:/Projects/Axiom/Axiom}:/vault
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

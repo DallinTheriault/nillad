@@ -1,0 +1,30 @@
+# Dependencies / build output
+node_modules
+.next
+*.tsbuildinfo
+
+# Environment / secrets — never commit. The bare `.env` holds the session
+# secret; `.env*.local` covers Next's local overrides. `.env.example` is the
+# committed, value-free template.
+.env
+.env.*
+!.env.example
+
+# Local SQLite — never commit data
+*.db
+*.db-journal
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Internal working notes / session handoffs — not for the public repo
+SESSION-*.md
+STATUS.md
+
+# One-off debug & n8n-patch scripts (kept locally, excluded from the repo)
+scripts/fix-*.cjs
+scripts/publish-*.cjs
+scripts/test-inbound-signed.cjs
