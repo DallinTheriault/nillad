@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { sendSmsViaN8n } from "@/lib/n8n";
 import { TZ, parseDue, parseStored, humanDenver, toDenverIso } from "@/lib/datetime";
 import { webSearch, fetchReadable, getWeather } from "@/lib/web";
+import { searchNotes, readNote, listNotes, appendNote } from "@/lib/vault";
 
 // ---------- Tool schemas (Ollama / OpenAI function-calling format) ----------
 
@@ -196,6 +197,29 @@ export const TOOL_SCHEMAS: Record<string, ToolSchema> = {
           note: { type: "string", description: "For save: the durable fact to remember." },
           query: { type: "string", description: "For recall: keywords to match (omit to list recent memories)." },
           memory_id: { type: "integer", description: "For forget: the memory id." },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  vault: {
+    type: "function",
+    function: {
+      name: "vault",
+      description:
+        "Dallin's Obsidian notes vault (\"Axiom\") — his real knowledge base of markdown notes (folders include Memory, Projects, Goals, Decisions, Journal, Lessons, Preferences, Inbox). SEARCH it whenever he references something he may have written down — a project, person, decision, goal, or asks 'what do I have / what did I note on X'. READ a note for its full text. APPEND to capture a durable note he wants kept, or to log to his journal. Searching is cheap — reach for it freely instead of saying you can't see his notes.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["search", "read", "list", "append"],
+            description:
+              "search = keyword-find notes; read = one note's full text; list = note paths (optionally in a folder); append = add text to a note (creates it if missing).",
+          },
+          query: { type: "string", description: "For search: keywords to find. For list: optional folder filter (e.g. 'Projects')." },
+          path: { type: "string", description: "For read/append: note path relative to the vault, e.g. 'Projects/Field.md' or 'Memory/Audi S6.md'. read also accepts a partial name." },
+          text: { type: "string", description: "For append: the markdown text to add to the note." },
         },
         required: ["action"],
       },
@@ -651,6 +675,15 @@ function execMemory(a: Args): string {
   return rows.map((r) => `#${r.id} [${r.subject}] ${r.note}`).join("\n");
 }
 
+function execVault(a: Args): string {
+  const action = str(a, "action") || "search";
+  if (action === "search") return searchNotes(str(a, "query"));
+  if (action === "read") return readNote(str(a, "path") || str(a, "query"));
+  if (action === "list") return listNotes(str(a, "query") || undefined);
+  if (action === "append") return appendNote(str(a, "path"), str(a, "text"));
+  return `Error: unknown vault action "${action}". Use search/read/list/append.`;
+}
+
 // Dispatch a single tool call by name. Returns the string result for the model.
 export async function executeTool(name: string, args: Args): Promise<string> {
   try {
@@ -671,6 +704,8 @@ export async function executeTool(name: string, args: Args): Promise<string> {
         return await execWeather(args);
       case "memory":
         return execMemory(args);
+      case "vault":
+        return execVault(args);
       case "send_sms":
         return await execSendSms(args);
       default:
