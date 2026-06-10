@@ -6,6 +6,21 @@
 
 -----
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/home.png" alt="Nillad home"><br><sub><b>Home</b> — the assistant surfaces what you were working on and what’s next.</sub></td>
+    <td width="50%"><img src="docs/screenshots/reminder.png" alt="Setting a reminder by chat"><br><sub><b>Conversational reminders</b> — a natural-language request becomes a scheduled reminder via tool-calling.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/calendar.png" alt="Nillad calendar"><br><sub><b>Calendar</b> — events and reminders in one view.</sub></td>
+    <td width="50%"></td>
+  </tr>
+</table>
+
+-----
+
 ## Why I built it
 
 Three honest reasons.
