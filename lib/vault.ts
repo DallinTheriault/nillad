@@ -164,6 +164,30 @@ export function readNote(pathOrName: string): string {
   return `No note found for "${pathOrName}". Use vault(search) to find it, or vault(list) to browse.`;
 }
 
+// A short, always-on summary injected into Nillad's system context each turn, so
+// a 12B is literally shown the vault exists + is readable and stops claiming it
+// "can't access local files". Cheap (one directory walk).
+export function vaultIndex(): string {
+  const notes = allNotes();
+  if (!notes.length) {
+    return "Dallin's Obsidian vault (Axiom) is reachable via your `vault` tool but currently has no notes.";
+  }
+  const folders = Array.from(
+    new Set(notes.map((n) => (n.rel.includes("/") ? n.rel.split("/")[0] : "(root)"))),
+  ).sort();
+  const recent = [...notes]
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, 6)
+    .map((n) =>
+      path
+        .basename(n.rel)
+        .replace(/\.md$/i, "")
+        .replace(/\s*-\s*20\d{2}[-\s:0-9]*$/, "")
+        .trim(),
+    );
+  return `Dallin's Obsidian vault (Axiom) is LIVE and readable through your \`vault\` tool — ${notes.length} note(s) across: ${folders.join(", ")}. Recent: ${recent.join("; ")}. For ANY question about his notes or vault, call vault(search)/vault(read) and answer from what it returns — you can see them.`;
+}
+
 export function appendNote(notePath: string, text: string): string {
   if (!notePath) return "Error: append needs a note `path` (e.g. 'Memory/Audi S6.md').";
   if (!text) return "Error: append needs `text` to write.";

@@ -17,6 +17,7 @@ import {
   type ToolSchema,
 } from "@/lib/nillad-tools";
 import { humanDenver, toDenverIso } from "@/lib/datetime";
+import { vaultIndex } from "@/lib/vault";
 
 const OLLAMA = process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434";
 const MODEL = process.env.NILLAD_OLLAMA_MODEL || "gemma4:12b-it-qat";
@@ -43,6 +44,8 @@ const SYSTEM_PROMPT = `You are Nillad, Dallin's personal AI assistant and second
 You have these tools. Pick the most specific one for the request and just use it; don't announce that you're about to.
 
 CRITICAL: To set a reminder, add a calendar event, log/complete an activity, or send a text, you MUST call the corresponding tool. NEVER say you've set, added, scheduled, saved, or sent something unless you called the tool THIS turn and it returned success. Knowing the current time does not mean a reminder exists — you still have to call reminders(set). If you only talked about it, it did not happen.
+
+CRITICAL (vault): You CAN access Dallin's local Obsidian notes through the vault tool. If he asks whether you can see his vault/notes, or asks anything about what's in them, you MUST call vault(search) or vault(list) FIRST and answer from the result. NEVER reply that you "can't access local files / private vaults" or that "no tool is linked" — that is false, the tool is right here. Do not repeat a previous "I can't" answer; just try the tool.
 - get_time — the current date/time. Only for "what time is it" or to resolve a relative schedule.
 - reminders — set/list/cancel timed reminders. Use whenever Dallin wants to be reminded of something later.
 - activities — his projects and task checklists. Use action "recent" to recall what he was working on ("what was I working on yesterday / what's unfinished"), and add/note/complete to keep them current.
@@ -192,7 +195,13 @@ export function runAgentStream(
   // ("tomorrow", "Saturday") correctly instead of guessing — a 12B with no clock
   // will otherwise hallucinate the year/month when filling a calendar/reminder time.
   const now = new Date();
-  const dated = `${SYSTEM_PROMPT}\n\nRight now it is ${humanDenver(now)} (${toDenverIso(now)}, America/Denver). Resolve relative dates/times against this and pass explicit ISO 8601 values to tools.`;
+  let vIndex = "";
+  try {
+    vIndex = `\n\n${vaultIndex()}`;
+  } catch {
+    /* vault unreadable — omit the index, the tool still works */
+  }
+  const dated = `${SYSTEM_PROMPT}\n\nRight now it is ${humanDenver(now)} (${toDenverIso(now)}, America/Denver). Resolve relative dates/times against this and pass explicit ISO 8601 values to tools.${vIndex}`;
   const messages: OllamaMsg[] = [{ role: "system", content: dated }, ...toOllama(clientMessages)];
 
   return new ReadableStream<Uint8Array>({
