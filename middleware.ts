@@ -10,6 +10,7 @@ export function middleware(req: NextRequest) {
   // Allow login, framework assets, the manifest, and static brand files through.
   if (
     pathname.startsWith("/login") ||
+    pathname.startsWith("/api/briefing") || // own key-gate; called by the n8n cron, no session cookie
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname === "/manifest.webmanifest" ||
