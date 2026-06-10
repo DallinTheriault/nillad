@@ -129,6 +129,17 @@ export function searchNotes(query: string, limit = 6): string {
     .join("\n");
 }
 
+// Raw content of a note (or "" if missing) — for internal dedup, not the model.
+export function noteRaw(rel: string): string {
+  const abs = safeResolve(rel);
+  if (!abs || !fs.existsSync(abs)) return "";
+  try {
+    return fs.readFileSync(abs, "utf8");
+  } catch {
+    return "";
+  }
+}
+
 export function readNote(pathOrName: string): string {
   if (!pathOrName) return "Error: read needs a note `path` (e.g. 'Projects/Field.md').";
   // exact path first

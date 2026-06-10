@@ -18,6 +18,7 @@ import {
 } from "@/lib/nillad-tools";
 import { humanDenver, toDenverIso } from "@/lib/datetime";
 import { vaultIndex } from "@/lib/vault";
+import { gateAutoMemory, autoCapture } from "@/lib/automemory";
 
 const OLLAMA = process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434";
 const MODEL = process.env.NILLAD_OLLAMA_MODEL || "gemma4:12b-it-qat";
@@ -204,16 +205,28 @@ export function runAgentStream(
   const dated = `${SYSTEM_PROMPT}\n\nRight now it is ${humanDenver(now)} (${toDenverIso(now)}, America/Denver). Resolve relative dates/times against this and pass explicit ISO 8601 values to tools.${vIndex}`;
   const messages: OllamaMsg[] = [{ role: "system", content: dated }, ...toOllama(clientMessages)];
 
+  // The last user message — fed to the gated auto-memory pass after the reply.
+  const lastUser = [...clientMessages].reverse().find((m) => m.role === "user");
+  const lastUserText = lastUser
+    ? typeof lastUser.content === "string"
+      ? lastUser.content
+      : lastUser.content.map((p) => (p.type === "text" ? p.text : "")).join(" ")
+    : "";
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const emit = (chunk: string) => controller.enqueue(enc.encode(chunk));
+      let finalText = "";
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const isLast = round === MAX_TOOL_ROUNDS - 1;
           // On the final allowed round, drop tools so the model is forced to answer.
           const turn = await streamTurn(messages, isLast ? [] : tools, (t) => emit(sseDelta(t)), think);
 
-          if (turn.toolCalls.length === 0) break; // got the final answer (already streamed)
+          if (turn.toolCalls.length === 0) {
+            finalText = turn.content; // final answer (already streamed)
+            break;
+          }
 
           // Record the assistant's tool-call turn, then execute each tool and
           // append its result, then loop to let the model use the results.
@@ -229,6 +242,8 @@ export function runAgentStream(
             messages.push({ role: "tool", content: result, tool_name: tc.name });
           }
         }
+        // Passive memory capture — gated, fire-and-forget so it never blocks the reply.
+        if (gateAutoMemory(lastUserText)) void autoCapture(lastUserText, finalText).catch(() => {});
         emit("data: [DONE]\n\n");
         controller.close();
       } catch (e) {
