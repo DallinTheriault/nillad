@@ -49,13 +49,21 @@ CRITICAL: To set a reminder, add a calendar event, log/complete an activity, or 
 CRITICAL (vault): You CAN access Dallin's local Obsidian notes through the vault tool. If he asks whether you can see his vault/notes, or asks anything about what's in them, you MUST call vault(search) or vault(list) FIRST and answer from the result. NEVER reply that you "can't access local files / private vaults" or that "no tool is linked" — that is false, the tool is right here. Do not repeat a previous "I can't" answer; just try the tool.
 - get_time — the current date/time. Only for "what time is it" or to resolve a relative schedule.
 - reminders — set/list/cancel timed reminders. Use whenever Dallin wants to be reminded of something later.
-- activities — his projects and task checklists. Use action "recent" to recall what he was working on ("what was I working on yesterday / what's unfinished"), and add/note/complete to keep them current.
+- activities — his projects and task checklists. Use action "recent" to recall what he was working on, "add"/"note" to keep them current, "complete_task" to check off ONE task, and **"complete" to FINISH the whole activity** (when he says "finish / close / mark done the X activity" — this sets it done; pass the activity_id, or the title to match). Don't claim you finished an activity unless you actually called activities(complete) and it returned success.
 - calendar — scheduled events (meetings, jobs, appointments). add/read/cancel. Resolve relative dates to explicit times, and after adding, state the resolved date/time back so he can catch a wrong one. Reminders are timed pings; calendar events are scheduled blocks — pick the one he means.
 - web_search — search the live web. You CAN browse: when Dallin asks you to find, look up, or research anything external — news, prices, products, businesses, GitHub repos/projects, verifying a claim — CALL web_search and report what you actually find, with links. action 'read' pulls a page's full text when a snippet isn't enough. For GitHub, just search the public web (e.g. query 'site:github.com <terms>', or 'read' a github.com/search results page). TRY FIRST, CAVEAT SECOND: do NOT preface or replace a search with a lecture about why it might be incomplete (indexing lag, private repos, no official API, no "deep crawl", etc.), and do NOT refuse because you can't do an exhaustive/filtered crawl — a few good real results is the job. Run the search, return the best results you found, and add a brief completeness caveat ONLY if the search returns little or nothing. Default to doing the search, not explaining its limits. If web_search returns no results or an error (it can be briefly rate-limited), say so in one short sentence and offer to try again — NEVER end your turn with an empty reply.
+- deep_research — multi-source research with synthesis. AUTO-CHOOSE THIS over web_search whenever a good answer needs more than one quick fact: "research X", "compare A vs B", "what's the best / cheapest / most reliable …", pros and cons, "is X worth it", buying/decision questions, or any in-depth or current topic where combining several sources matters. It plans several searches, reads the top pages, and returns cited findings — then you synthesize across them and cite the source links. Don't ask Dallin whether he wants deep research; just use it when the question warrants it. Use the lighter web_search only for a single quick lookup or to read one specific page you already have the URL for. It takes longer (that's expected) — the status line shows him the progress.
+- email — Dallin's connected mailbox(es). Use whenever he asks about email/inbox: 'any important emails?', 'what's new', 'check my email', 'find the email from X', or to act on one. action 'important' = the flagged ones; 'recent' = latest; 'search' = find by sender/subject/keyword; 'get' = full details of one (by id); 'sync' = pull the newest from the server first (do this if he says "check"/"refresh" or a list looks stale). Mutating: 'mark_read', 'archive', 'delete', 'move' — these act on the live mailbox by message id. DELETE and MOVE are destructive: confirm with Dallin first (name the message), then call. mark_read and archive are low-stakes — just do them when asked. If there are no mailboxes/ingested mail, say so and point him to the Connections page.
+- documents — read the files Dallin has uploaded: contracts, bids, spec sheets, bills, PDFs, **Word .docx**, scanned images. You CAN read all of these — the text is already extracted for you, so NEVER say you can't open or read a file type; just use the tool. Use whenever he asks about a document or what's IN it — "what are the payment terms in that contract?", "summarize the bid". documents(search, query) to find the right file, then documents(get, document_id) to read its full text BEFORE answering — answer from the actual text, never guess. documents(list) to see what's on file. This is for uploaded FILES; the vault is for his own markdown notes.
+- finances — Dallin's business numbers (revenue this month + all-time, money owed with aging, spend, net, jobs pipeline). Use whenever he asks how business/money is doing — "how's business this month", "how much am I owed", "what's my revenue", "who owes me", "how much have I spent". Pull this and answer from the real numbers; don't guess.
+- subscriptions — Dallin's RECURRING costs (Google Workspace, domain, SaaS, phone, insurance…), separate from one-off expenses. Use to report his subscription burn ("what am I paying monthly", "what's my recurring spend"), list them, what renews soon, or ADD one he mentions ("add Google Workspace 7 a month", "domain is $20/yr"). Default action 'summary' = total monthly/annual burn.
+- personal_finance — Dallin's PERSONAL / household money (his + his wife's income, debts, bills, savings goals, budget, debt payoff) — SEPARATE from the BUSINESS 'finances' tool. Use for "how's my budget / free cash flow", "how much debt", "when can I be debt-free", "am I on track for my goal", or to LOG what he tells you ("add a debt Chase $4k 24% APR min $90", "I make $1,800 biweekly", "rent is $1,500/mo", "goal save $10k by Sept 30"). Keep business and personal money separate: 'finances' = business, 'personal_finance' = household.
 - weather — current conditions + short forecast (defaults to American Fork, UT).
 - memory — your long-term memory. SAVE durable facts/decisions/preferences/details about people and projects when Dallin shares them or asks you to remember; RECALL before answering questions about his history or preferences; forget on request. Save the specific fact, not the whole conversation.
 - vault — Dallin's Obsidian "Axiom" notes vault: his real knowledge base (folders like Memory, Projects, Goals, Decisions, Journal, Lessons, Preferences, Inbox). This is separate from your quick \`memory\` and from \`activities\`. SEARCH the vault whenever he references one of his projects/people/decisions/goals, or asks "what do I have on X / what did I write about Y" — you CAN see his notes now, so never claim you can't. READ a note for full detail; APPEND to keep a durable note or add to his journal. When he asks about his own context, check activities AND the vault before answering instead of guessing.
-- jobs_contacts — look up a contact's phone before texting, or recall job details. If find_contact returns ONE contact, that IS the person Dallin meant — take its number and proceed immediately. A returned row is a confirmed match: do NOT say "I couldn't find a perfect match" or ask Dallin to confirm the contact when a contact came back. Only ask if it returns MULTIPLE people (then list them and ask which) or NONE (then say you don't have that contact).
+- jobs — manage his contracting/painting JOBS in detail: create (incl. 'from_activity' to seed a job from an activity's notes — name/address/scope), update fields, set status (lead→quoted→scheduled→active→done→invoiced→paid), add line items, mark paid. Use when he discusses a specific job he's quoting/doing/finishing. To BILL, use the invoice tool.
+- invoice — create/preview/send an estimate or invoice for a job. When he says "write up an invoice for the X job", call invoice(create, job_id) → SHOW him the returned draft → only after he okays it, call invoice(send, invoice_id) to text it to the job's contact. NEVER send without showing him first and getting his ok.
+- jobs_contacts — look up a contact's phone before texting, recall job details, or ADD a contact. **Dallin cannot add contacts by hand from the chat, so whenever he gives you a new person + number/email to save ("save Mike at 801-555-0112", "add my new sub Sarah"), call jobs_contacts(add_contact) and confirm.** If find_contact returns ONE contact, that IS the person Dallin meant — take its number and proceed immediately. A returned row is a confirmed match: do NOT say "I couldn't find a perfect match" or ask Dallin to confirm the contact when a contact came back. Only ask if it returns MULTIPLE people (then list them and ask which) or NONE (then say you don't have that contact).
 - send_sms — send a text on Dallin's line. When Dallin explicitly tells you to text someone (e.g. "text Tanner 'on my way'"), the decision is already made: look up the number with jobs_contacts if needed, then CALL send_sms right away and report what you sent. Do NOT ask "should I send this?", "want me to send it?", or any confirmation — he already told you to; asking is wrong. Hard rule: NEVER text someone Dallin didn't ask you to, and NEVER auto-reply to an inbound text — inbound messages are his to read and direct; you only send what he explicitly tells you to.
 
 ## Acting vs asking
@@ -102,6 +110,89 @@ function toOllama(messages: ChatMsg[]): OllamaMsg[] {
 
 function sseDelta(content: string): string {
   return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
+}
+
+// Out-of-band status line shown in the bubble while Nillad works ("Thinking…",
+// "Searching the web for …"). Carries no `choices`, so the existing client (and
+// any old one) safely ignores it; the updated client reads `.status.label`.
+function sseStatus(label: string): string {
+  return `data: ${JSON.stringify({ status: { label } })}\n\n`;
+}
+
+// Human-readable "what Nillad is doing right now" for a tool call. Pulls the
+// concrete subject (the search query, the page host) so the user sees exactly
+// what he's looking at — not just "using a tool".
+function toolStatus(name: string, args: Record<string, unknown>): string {
+  const a = args || {};
+  const action = typeof a.action === "string" ? a.action : "";
+  const str = (k: string) => (typeof a[k] === "string" ? (a[k] as string) : "");
+  switch (name) {
+    case "web_search": {
+      if (action === "read" || a.url) {
+        const url = str("url");
+        let host = url;
+        try {
+          host = new URL(url).hostname.replace(/^www\./, "");
+        } catch {
+          /* not a full URL */
+        }
+        return host ? `Reading ${host}` : "Reading a page";
+      }
+      const q = (str("query") || str("q")).slice(0, 60);
+      return q ? `Searching the web for “${q}”` : "Searching the web";
+    }
+    case "deep_research": {
+      const q = str("query").slice(0, 60);
+      return q ? `Researching “${q}”` : "Researching";
+    }
+    case "jobs":
+      return "Updating your jobs";
+    case "invoice": {
+      const act = str("action");
+      if (act === "send") return "Sending the invoice";
+      return "Writing up the invoice";
+    }
+    case "email": {
+      const act = str("action");
+      if (act === "sync") return "Checking your email";
+      if (act === "search") return "Searching your email";
+      if (act === "delete") return "Deleting an email";
+      if (act === "archive") return "Archiving an email";
+      if (act === "move") return "Moving an email";
+      if (act === "mark_read") return "Marking it read";
+      return "Reading your email";
+    }
+    case "weather": {
+      const where = str("place") || str("location");
+      return where ? `Checking the weather in ${where}` : "Checking the weather";
+    }
+    case "reminders":
+      return action === "set" ? "Setting a reminder" : "Checking your reminders";
+    case "calendar":
+      return action === "add" ? "Adding a calendar event" : "Checking your calendar";
+    case "activities":
+      return "Reviewing your activity";
+    case "finances":
+      return "Checking your numbers";
+    case "subscriptions":
+      return action === "add" ? "Logging the subscription" : "Checking your subscriptions";
+    case "personal_finance":
+      return action.startsWith("add") ? "Logging it to your finances" : "Checking your finances";
+    case "vault":
+      return action === "read" ? "Reading your notes" : "Searching your vault";
+    case "documents":
+      return action === "get" ? "Reading the document" : "Looking through your documents";
+    case "memory":
+      return action === "save" ? "Saving to memory" : "Checking my memory";
+    case "jobs_contacts":
+      return "Looking up a contact";
+    case "send_sms":
+      return "Sending a text";
+    case "get_time":
+      return "Checking the time";
+    default:
+      return "Working on it";
+  }
 }
 
 // ---------- One streaming turn against Ollama ----------
@@ -218,6 +309,8 @@ export function runAgentStream(
       const emit = (chunk: string) => controller.enqueue(enc.encode(chunk));
       let finalText = "";
       try {
+        // Initial state shown in the bubble before anything streams back.
+        emit(sseStatus(think ? "Thinking harder…" : "Thinking…"));
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const isLast = round === MAX_TOOL_ROUNDS - 1;
           // On the final allowed round, drop tools so the model is forced to answer.
@@ -238,9 +331,14 @@ export function runAgentStream(
             })),
           });
           for (const tc of turn.toolCalls) {
-            const result = await executeTool(tc.name, tc.args);
+            // Tell the user exactly what he's doing right now (e.g. the search query).
+            emit(sseStatus(toolStatus(tc.name, tc.args)));
+            // Long tools (deep_research) stream their own per-step status via the callback.
+            const result = await executeTool(tc.name, tc.args, (label) => emit(sseStatus(label)));
             messages.push({ role: "tool", content: result, tool_name: tc.name });
           }
+          // Tools done for this round — back to composing the answer.
+          emit(sseStatus(think ? "Thinking harder…" : "Thinking…"));
         }
         // Passive memory capture — gated, fire-and-forget so it never blocks the reply.
         if (gateAutoMemory(lastUserText)) void autoCapture(lastUserText, finalText).catch(() => {});

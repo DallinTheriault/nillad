@@ -1,0 +1,14 @@
+# Screenshot/demo overlay. Points the dashboard at the seeded DEMO database and
+# uses generic business contact details (so the printable invoice shows no real
+# address/phone). Your real .env + nillad.db are untouched.
+#
+#   Demo (screenshots):  docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#   Back to real:        docker compose up -d --build
+services:
+  nillad-dashboard:
+    environment:
+      - NILLAD_DB=/vault/nillad-demo.db
+      - NILLAD_BIZ_ADDRESS=128 Commerce Way, Suite 4, Lehi, UT 84043
+      - NILLAD_BIZ_PHONE=(801) 555-0148
+      - NILLAD_BIZ_EMAIL=hello@sharplinepainting.co
+      - NILLAD_BIZ_VENMO=@Sharpline-Painting

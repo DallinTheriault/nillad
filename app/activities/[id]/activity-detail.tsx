@@ -9,8 +9,6 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import {
   addTask,
@@ -37,6 +35,7 @@ export type Task = {
   title: string;
   done: number; // 0 | 1
   done_at: string | null;
+  parent_id: number | null;
 };
 
 const STATUSES: ActivityStatus[] = ["active", "paused", "done"];
@@ -51,8 +50,11 @@ export function ActivityDetail({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  const open = tasks.filter((t) => !t.done);
-  const done = tasks.filter((t) => t.done);
+  // Top-level tasks (parent_id = null) with their sub-tasks nested underneath.
+  const topLevel = tasks.filter((t) => t.parent_id == null);
+  const subsOf = (id: number) => tasks.filter((t) => t.parent_id === id);
+  const total = tasks.length;
+  const doneCount = tasks.filter((t) => t.done).length;
 
   // --- notes (context) ---
   const [notes, setNotes] = useState(activity.notes ?? "");
@@ -60,7 +62,8 @@ export function ActivityDetail({
 
   // --- new task input ---
   const [newTask, setNewTask] = useState("");
-  const [showDone, setShowDone] = useState(false);
+  const [addingFor, setAddingFor] = useState<number | null>(null); // which task is showing the sub-step input
+  const [subText, setSubText] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   function run(fn: () => Promise<unknown>) {
@@ -76,6 +79,15 @@ export function ActivityDetail({
     if (!t) return;
     setNewTask("");
     run(() => addTask(activity.id, t));
+  }
+
+  function handleAddSub(e: React.FormEvent, parentId: number) {
+    e.preventDefault();
+    const t = subText.trim();
+    if (!t) return;
+    setSubText("");
+    setAddingFor(null);
+    run(() => addTask(activity.id, t, parentId));
   }
 
   return (
@@ -104,7 +116,7 @@ export function ActivityDetail({
       {/* Tasks */}
       <section>
         <div className="text-[10px] uppercase tracking-[0.18em] text-bone-mute font-mono mb-2">
-          Checklist {tasks.length > 0 && `· ${done.length}/${tasks.length}`}
+          Checklist {total > 0 && `· ${doneCount}/${total}`}
         </div>
 
         <form onSubmit={handleAddTask} className="flex items-center gap-2 mb-3">
@@ -124,33 +136,61 @@ export function ActivityDetail({
           </button>
         </form>
 
-        {open.length === 0 && done.length === 0 ? (
+        {total === 0 ? (
           <p className="text-xs text-bone-dim font-mono py-2">No steps yet.</p>
         ) : (
-          <ul className="space-y-1">
-            {open.map((t) => (
-              <TaskRow key={t.id} task={t} pending={pending} onToggle={() => run(() => toggleTask(t.id, true))} onDelete={() => run(() => deleteTask(t.id))} />
-            ))}
+          <ul className="space-y-1.5">
+            {topLevel.map((t) => {
+              const subs = subsOf(t.id);
+              return (
+                <li key={t.id}>
+                  <TaskRow
+                    task={t}
+                    pending={pending}
+                    onToggle={() => run(() => toggleTask(t.id, !t.done))}
+                    onDelete={() => run(() => deleteTask(t.id))}
+                    onAddSub={() => {
+                      setSubText("");
+                      setAddingFor((cur) => (cur === t.id ? null : t.id));
+                    }}
+                  />
+                  {(subs.length > 0 || addingFor === t.id) && (
+                    <div className="ml-[26px] mt-1 space-y-1 border-l border-border pl-3">
+                      {subs.map((s) => (
+                        <TaskRow
+                          key={s.id}
+                          task={s}
+                          pending={pending}
+                          indent
+                          onToggle={() => run(() => toggleTask(s.id, !s.done))}
+                          onDelete={() => run(() => deleteTask(s.id))}
+                        />
+                      ))}
+                      {addingFor === t.id && (
+                        <form onSubmit={(e) => handleAddSub(e, t.id)} className="flex items-center gap-2">
+                          <input
+                            autoFocus
+                            value={subText}
+                            onChange={(e) => setSubText(e.target.value)}
+                            placeholder="Add a sub-step…"
+                            className="flex-1 rounded-md bg-surface border border-border px-2.5 py-1.5 text-[13px] text-bone placeholder:text-bone-mute outline-none focus:border-periwinkle"
+                          />
+                          <button
+                            type="submit"
+                            disabled={pending || !subText.trim()}
+                            className="w-7 h-7 grid place-items-center rounded-md bubble-stroke-gradient text-bone disabled:opacity-40 shrink-0"
+                            aria-label="Add sub-step"
+                          >
+                            <Plus size={13} />
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
-        )}
-
-        {done.length > 0 && (
-          <div className="mt-3">
-            <button
-              onClick={() => setShowDone((v) => !v)}
-              className="inline-flex items-center gap-1 text-xs text-bone-mute hover:text-bone-dim font-mono"
-            >
-              {showDone ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-              {done.length} completed
-            </button>
-            {showDone && (
-              <ul className="space-y-1 mt-1">
-                {done.map((t) => (
-                  <TaskRow key={t.id} task={t} pending={pending} onToggle={() => run(() => toggleTask(t.id, false))} onDelete={() => run(() => deleteTask(t.id))} />
-                ))}
-              </ul>
-            )}
-          </div>
         )}
       </section>
 
@@ -240,32 +280,50 @@ function TaskRow({
   pending,
   onToggle,
   onDelete,
+  onAddSub,
+  indent,
 }: {
   task: Task;
   pending: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onAddSub?: () => void;
+  indent?: boolean;
 }) {
   const done = !!task.done;
+  const box = indent ? "w-[18px] h-[18px]" : "w-5 h-5";
   return (
-    <li className="group flex items-center gap-2.5">
+    <div className="group flex items-center gap-2.5">
       <button
         onClick={onToggle}
         disabled={pending}
         aria-label={done ? "Mark not done" : "Mark done"}
-        className={`w-5 h-5 shrink-0 rounded-md grid place-items-center transition ${
+        className={`${box} shrink-0 rounded-md grid place-items-center transition ${
           done
             ? "bubble-stroke-gradient text-bone"
             : "border border-border-strong text-transparent hover:border-periwinkle"
         }`}
       >
-        <Check size={13} />
+        <Check size={indent ? 11 : 13} />
       </button>
       <span
-        className={`flex-1 text-sm ${done ? "text-bone-mute line-through" : "text-bone"}`}
+        className={`flex-1 ${indent ? "text-[13px]" : "text-sm"} ${
+          done ? "text-bone-mute line-through" : indent ? "text-bone-dim" : "text-bone"
+        }`}
       >
         {task.title}
       </span>
+      {onAddSub && (
+        <button
+          onClick={onAddSub}
+          disabled={pending}
+          aria-label="Add sub-step"
+          title="Add sub-step"
+          className="w-7 h-7 grid place-items-center rounded-md text-bone-mute opacity-60 hover:opacity-100 hover:text-periwinkle transition"
+        >
+          <Plus size={15} />
+        </button>
+      )}
       <button
         onClick={onDelete}
         disabled={pending}
@@ -274,6 +332,6 @@ function TaskRow({
       >
         <X size={14} />
       </button>
-    </li>
+    </div>
   );
 }

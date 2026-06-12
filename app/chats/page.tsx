@@ -2,6 +2,7 @@ import Link from "next/link";
 import { MessageCircle, Plus } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { PageHeader } from "@/components/page-header";
+import { ChatDeleteButton } from "@/components/chat-delete-button";
 
 export const dynamic = "force-dynamic";
 
@@ -65,11 +66,8 @@ export default function ChatsPage() {
       ) : (
         <ul className="divide-y divide-border">
           {visible.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/chat/${c.id}`}
-                className="flex items-start gap-3 px-4 py-3.5 active:bg-surface hover:bg-surface/70 transition-colors"
-              >
+            <li key={c.id} className="flex items-stretch gap-1 pr-2 active:bg-surface hover:bg-surface/70 transition-colors">
+              <Link href={`/chat/${c.id}`} className="flex items-start gap-3 px-4 py-3.5 flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-bone truncate">{c.title || "Chat"}</span>
@@ -82,6 +80,7 @@ export default function ChatsPage() {
                   </p>
                 </div>
               </Link>
+              <ChatDeleteButton id={c.id} />
             </li>
           ))}
         </ul>

@@ -129,6 +129,48 @@ export function searchNotes(query: string, limit = 6): string {
     .join("\n");
 }
 
+// Structured variant of searchNotes for the universal-search page: returns objects
+// ({ rel, snippet, score }) instead of a formatted string, so the UI can group and
+// link them. Same scoring/snippet logic as searchNotes.
+export type VaultHit = { rel: string; snippet: string; score: number; mtime: number };
+export function searchNotesStructured(query: string, limit = 8): VaultHit[] {
+  const terms = words(query);
+  if (!terms.length) return [];
+  const notes = allNotes();
+  const hits: VaultHit[] = [];
+  for (const n of notes) {
+    let content: string;
+    try {
+      if (fs.statSync(n.abs).size > MAX_FILE_BYTES) continue;
+      content = fs.readFileSync(n.abs, "utf8");
+    } catch {
+      continue;
+    }
+    const lowContent = content.toLowerCase();
+    const lowRel = n.rel.toLowerCase();
+    let score = 0;
+    for (const t of terms) {
+      const stem = t.endsWith("s") ? t.slice(0, -1) : t;
+      if (lowRel.includes(t) || lowRel.includes(stem)) score += 3;
+      if (lowContent.includes(t) || lowContent.includes(stem)) score += 1;
+    }
+    if (score === 0) continue;
+    let snippet = "";
+    const lines = content.split(/\r?\n/);
+    for (const line of lines) {
+      const low = line.toLowerCase();
+      if (terms.some((t) => low.includes(t) || low.includes(t.replace(/s$/, ""))) && line.trim()) {
+        snippet = line.trim().slice(0, SNIPPET_CAP);
+        break;
+      }
+    }
+    if (!snippet) snippet = (lines.find((l) => l.trim()) || "").trim().slice(0, SNIPPET_CAP);
+    hits.push({ rel: n.rel, snippet, score, mtime: n.mtime });
+  }
+  hits.sort((a, b) => b.score - a.score || b.mtime - a.mtime);
+  return hits.slice(0, limit);
+}
+
 // Raw content of a note (or "" if missing) — for internal dedup, not the model.
 export function noteRaw(rel: string): string {
   const abs = safeResolve(rel);
@@ -197,6 +239,23 @@ export function vaultIndex(): string {
         .trim(),
     );
   return `Dallin's Obsidian vault (Axiom) is LIVE and readable through your \`vault\` tool — ${notes.length} note(s) across: ${folders.join(", ")}. Recent: ${recent.join("; ")}. For ANY question about his notes or vault, call vault(search)/vault(read) and answer from what it returns — you can see them.`;
+}
+
+// Overwrite a note's full contents (creating folders as needed). Used for the
+// daily briefing so a same-day re-run replaces, not duplicates. Confined to the
+// vault root like every other writer here.
+export function writeNote(notePath: string, text: string): string {
+  if (!notePath) return "Error: write needs a note `path`.";
+  const abs = safeResolve(notePath);
+  if (!abs) return `Error: "${notePath}" is outside the vault.`;
+  try {
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, `${text.trim()}\n`, "utf8");
+    const rel = path.relative(VAULT_ROOT, abs).replace(/\\/g, "/");
+    return `Wrote ${rel}.`;
+  } catch (e) {
+    return `Couldn't write ${notePath}: ${e instanceof Error ? e.message : e}`;
+  }
 }
 
 export function appendNote(notePath: string, text: string): string {

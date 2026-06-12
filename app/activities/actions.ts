@@ -73,19 +73,24 @@ export async function archiveActivity(id: number) {
   return { ok: true as const };
 }
 
-export async function addTask(activityId: number, title: string) {
+export async function addTask(activityId: number, title: string, parentId?: number | null) {
   const t = title.trim();
   if (!t) return { ok: false as const, error: "Empty task." };
   const db = getDb();
+  const parent = parentId ?? null;
+  // sort_order is scoped to siblings (same parent within the activity).
   const max = db
-    .prepare(`SELECT COALESCE(MAX(sort_order), 0) AS m FROM tasks WHERE activity_id = ?`)
-    .get(activityId) as { m: number };
+    .prepare(
+      `SELECT COALESCE(MAX(sort_order), 0) AS m FROM tasks
+       WHERE activity_id = ? AND IFNULL(parent_id,0) = IFNULL(?,0)`,
+    )
+    .get(activityId, parent) as { m: number };
   const info = db
     .prepare(
-      `INSERT INTO tasks (activity_id, title, done, sort_order, created_at)
-       VALUES (?, ?, 0, ?, datetime('now'))`,
+      `INSERT INTO tasks (activity_id, title, done, sort_order, parent_id, created_at)
+       VALUES (?, ?, 0, ?, ?, datetime('now'))`,
     )
-    .run(activityId, t, (max.m ?? 0) + 1);
+    .run(activityId, t, (max.m ?? 0) + 1, parent);
   db.prepare(`UPDATE activities SET updated_at = datetime('now') WHERE id = ?`).run(activityId);
   revalidatePath(`/activities/${activityId}`);
   revalidatePath("/activities");
@@ -113,7 +118,8 @@ export async function deleteTask(taskId: number) {
   const row = db
     .prepare(`SELECT activity_id FROM tasks WHERE id = ?`)
     .get(taskId) as { activity_id: number } | undefined;
-  db.prepare(`DELETE FROM tasks WHERE id = ?`).run(taskId);
+  // Remove the task AND any sub-tasks under it (no FK cascade on the ALTER'd column).
+  db.prepare(`DELETE FROM tasks WHERE id = ? OR parent_id = ?`).run(taskId, taskId);
   if (row) revalidatePath(`/activities/${row.activity_id}`);
   return { ok: true as const };
 }

@@ -1,11 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Mic, ArrowUp, Loader2, X, ImageIcon, Brain } from "lucide-react";
+import { Plus, Mic, ArrowUp, Loader2, X, ImageIcon, Brain, Copy, Check, RotateCw, Volume2, Square } from "lucide-react";
 import { MenuButton } from "@/components/menu-button";
-import { createChat, appendMessage } from "./actions";
+import { Markdown } from "@/components/markdown";
+import { VoiceMode } from "./voice-mode";
+import { createChat, appendMessage, updateLastAssistant } from "./actions";
 
 type Msg = { role: "user" | "assistant"; content: string; image?: string; hasImage?: boolean };
+
+// Curated natural-sounding Kokoro voices (the full set is large; these are the good ones).
+const VOICES: { id: string; label: string }[] = [
+  { id: "af_heart", label: "Heart — F, warm" },
+  { id: "af_bella", label: "Bella — F" },
+  { id: "af_nicole", label: "Nicole — F, soft" },
+  { id: "af_sky", label: "Sky — F" },
+  { id: "am_michael", label: "Michael — M" },
+  { id: "am_adam", label: "Adam — M" },
+  { id: "am_onyx", label: "Onyx — M, deep" },
+  { id: "am_puck", label: "Puck — M" },
+  { id: "bm_george", label: "George — M, British" },
+  { id: "bm_fable", label: "Fable — M, British" },
+];
 
 export function ChatView({
   chatId: initialChatId = null,
@@ -24,12 +40,19 @@ export function ChatView({
   const [msgs, setMsgs] = useState<Msg[]>(initialMessages);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  // Live "what Nillad is doing" line ("Searching the web for …") streamed from the
+  // agent and shown in the pending bubble until the real answer starts arriving.
+  const [status, setStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [listening, setListening] = useState(false);
   // "Think harder" — sticky toggle. Off = snappy ~1-2s replies; on = Nillad runs
   // a full chain-of-thought first (slower, deeper) until turned back off.
   const [thinkHard, setThinkHard] = useState(false);
+  // Voice mode — a full-screen, hands-free "talk to Nillad" experience with a
+  // reactive synthetic-brain visual (self-contained; see voice-mode.tsx).
+  const [voiceMode, setVoiceMode] = useState(false);
   const chatIdRef = useRef<number | null>(initialChatId);
   const sent = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,46 +61,47 @@ export function ChatView({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
 
-  async function send(text: string, image?: string | null) {
-    const q = text.trim();
-    if ((!q && !image) || busy) return;
+  // Build the API payload from a message history; the LAST message goes multimodal
+  // if it carries an image (prior turns are sent as text).
+  function buildApiMessages(history: Msg[]) {
+    return history.map((m, i) => {
+      if (i === history.length - 1 && m.image) {
+        return {
+          role: m.role,
+          content: [
+            ...(m.content ? [{ type: "text", text: m.content }] : []),
+            { type: "image_url", image_url: { url: m.image } },
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+  }
+
+  const abortRef = useRef<AbortController | null>(null);
+
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  // Stream one assistant reply for the given history (which ends at a user turn).
+  // replace=true overwrites the last persisted assistant row (Retry); otherwise a
+  // new assistant row is appended.
+  async function streamAssistant(history: Msg[], cid: number, replace: boolean): Promise<string> {
     setErr(null);
-    setInput("");
-    setPendingImage(null);
-
-    // Ensure a persisted chat exists.
-    if (chatIdRef.current == null) {
-      const { id } = await createChat(q || "Image");
-      chatIdRef.current = id;
-      window.history.replaceState({}, "", `/chat/${id}`);
-    }
-    const cid = chatIdRef.current;
-
-    const userMsg: Msg = { role: "user", content: q, image: image ?? undefined, hasImage: !!image };
-    const history = [...msgs, userMsg];
     setMsgs([...history, { role: "assistant", content: "" }]);
     setBusy(true);
-    void appendMessage(cid, "user", q || "[image]", !!image, image ?? null);
-
+    setStatus("Thinking…");
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let acc = "";
     try {
-      // Build the payload: prior turns as text; the new turn multimodal if image.
-      const apiMessages = history.map((m, i) => {
-        if (i === history.length - 1 && image) {
-          return {
-            role: m.role,
-            content: [
-              ...(q ? [{ type: "text", text: q }] : []),
-              { type: "image_url", image_url: { url: image } },
-            ],
-          };
-        }
-        return { role: m.role, content: m.content };
-      });
-
+      const apiMessages = buildApiMessages(history);
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages, think: thinkHard, ...(tools ? { tools } : {}) }),
+        signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -86,7 +110,6 @@ export function ChatView({
       const reader = res.body.getReader();
       const dec = new TextDecoder();
       let buf = "";
-      let acc = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -99,8 +122,15 @@ export function ChatView({
           const data = s.slice(5).trim();
           if (data === "[DONE]" || !data) continue;
           try {
-            const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+            const obj = JSON.parse(data);
+            // Out-of-band status update (no `choices`): show what he's doing.
+            if (obj.status?.label) {
+              setStatus(obj.status.label);
+              continue;
+            }
+            const delta = obj.choices?.[0]?.delta?.content;
             if (delta) {
+              if (acc === "") setStatus(null); // first real token — drop the status line
               acc += delta;
               setMsgs((m) => {
                 const c = [...m];
@@ -113,12 +143,68 @@ export function ChatView({
           }
         }
       }
-      if (acc) void appendMessage(cid, "assistant", acc);
+      if (acc) {
+        if (replace) void updateLastAssistant(cid, acc);
+        else void appendMessage(cid, "assistant", acc);
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setMsgs((m) => m.slice(0, -1));
+      const aborted = (e as { name?: string })?.name === "AbortError";
+      if (aborted) {
+        // Stopped by the user — keep whatever streamed, persist the partial reply.
+        if (acc) {
+          if (replace) void updateLastAssistant(cid, acc);
+          else void appendMessage(cid, "assistant", acc);
+        } else {
+          setMsgs((m) => m.slice(0, -1));
+        }
+      } else {
+        setErr(e instanceof Error ? e.message : String(e));
+        setMsgs((m) => m.slice(0, -1));
+      }
     } finally {
+      abortRef.current = null;
       setBusy(false);
+      setStatus(null);
+    }
+    return acc;
+  }
+
+  async function send(text: string, image?: string | null): Promise<string> {
+    const q = text.trim();
+    if ((!q && !image) || busy) return "";
+    setInput("");
+    setPendingImage(null);
+
+    // Ensure a persisted chat exists.
+    if (chatIdRef.current == null) {
+      const { id } = await createChat(q || "Image");
+      chatIdRef.current = id;
+      window.history.replaceState({}, "", `/chat/${id}`);
+    }
+    const cid = chatIdRef.current;
+
+    const userMsg: Msg = { role: "user", content: q, image: image ?? undefined, hasImage: !!image };
+    void appendMessage(cid, "user", q || "[image]", !!image, image ?? null);
+    return streamAssistant([...msgs, userMsg], cid, false);
+  }
+
+  // Regenerate the last reply: drop trailing assistant turn(s), re-stream from the
+  // last user message, and overwrite the stored assistant row.
+  async function regenerate() {
+    if (busy || chatIdRef.current == null) return;
+    const h = [...msgs];
+    while (h.length && h[h.length - 1].role === "assistant") h.pop();
+    if (!h.length) return;
+    await streamAssistant(h, chatIdRef.current, true);
+  }
+
+  async function copyMsg(text: string, idx: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx((c) => (c === idx ? null : c)), 1500);
+    } catch {
+      /* clipboard blocked — ignore */
     }
   }
 
@@ -182,6 +268,13 @@ export function ChatView({
         <h1 className="absolute left-1/2 -translate-x-1/2 text-xl font-bold italic tracking-tight bg-gradient-to-b from-bone to-bone-mute bg-clip-text text-transparent">
           Nillad
         </h1>
+        <button
+          onClick={() => setVoiceMode(true)}
+          aria-label="Voice mode"
+          className="ml-auto z-10 w-9 h-9 grid place-items-center rounded-full text-bone-dim hover:text-bone active:opacity-60 transition"
+        >
+          <Volume2 size={20} />
+        </button>
       </header>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-4">
@@ -191,12 +284,15 @@ export function ChatView({
         <div className="space-y-2.5">
           {msgs.map((m, i) => {
             const me = m.role === "user";
-            const streaming = busy && i === msgs.length - 1 && m.role === "assistant";
+            const isLast = i === msgs.length - 1;
+            const streaming = busy && isLast && m.role === "assistant";
             return (
-              <div key={i} className={`flex ${me ? "justify-end" : "justify-start"}`}>
+              <div key={i} className={`flex flex-col ${me ? "items-end" : "items-start"}`}>
                 <div
-                  className={`max-w-[82%] px-4 py-2.5 rounded-2xl text-[15px] leading-snug whitespace-pre-wrap break-words ${
-                    me ? "bubble-stroke-gradient text-bone" : "bubble-stroke-muted text-bone"
+                  className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-[15px] leading-snug break-words ${
+                    me
+                      ? "bubble-stroke-gradient text-bone whitespace-pre-wrap"
+                      : "bubble-stroke-muted text-bone"
                   }`}
                 >
                   {m.image && (
@@ -208,9 +304,41 @@ export function ChatView({
                       <ImageIcon size={12} /> image
                     </span>
                   )}
-                  {m.content ||
-                    (streaming ? <Loader2 size={15} className="animate-spin text-bone-mute" /> : "")}
+                  {me ? (
+                    m.content
+                  ) : m.content ? (
+                    <Markdown>{m.content}</Markdown>
+                  ) : streaming ? (
+                    <span className="flex items-center gap-2 text-bone-mute text-[13px] italic">
+                      <Loader2 size={14} className="animate-spin shrink-0" />
+                      <span className="animate-pulse">{status || "Thinking…"}</span>
+                    </span>
+                  ) : (
+                    ""
+                  )}
                 </div>
+
+                {!me && m.content && !streaming && (
+                  <div className="flex items-center gap-1.5 mt-1.5 ml-1">
+                    <button
+                      onClick={() => copyMsg(m.content, i)}
+                      aria-label="Copy"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] text-bone-dim bg-surface-2/60 hover:text-bone hover:bg-surface-2 active:opacity-60 transition"
+                    >
+                      {copiedIdx === i ? <Check size={14} className="text-periwinkle" /> : <Copy size={14} />}
+                      {copiedIdx === i ? "Copied" : "Copy"}
+                    </button>
+                    {isLast && !busy && (
+                      <button
+                        onClick={regenerate}
+                        aria-label="Retry"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] text-bone-dim bg-surface-2/60 hover:text-bone hover:bg-surface-2 active:opacity-60 transition"
+                      >
+                        <RotateCw size={14} /> Retry
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -273,14 +401,22 @@ export function ChatView({
             enterKeyHint="send"
             className="flex-1 bg-transparent outline-none text-bone placeholder:text-bone-mute italic px-1 min-w-0"
           />
-          {canSend ? (
+          {busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label="Stop"
+              className="w-9 h-9 grid place-items-center rounded-full shrink-0 gradient-fill text-bone"
+            >
+              <Square size={14} fill="currentColor" />
+            </button>
+          ) : canSend ? (
             <button
               type="submit"
-              disabled={busy}
               aria-label="Send"
-              className="w-9 h-9 grid place-items-center rounded-full shrink-0 gradient-fill text-bone disabled:opacity-50"
+              className="w-9 h-9 grid place-items-center rounded-full shrink-0 gradient-fill text-bone"
             >
-              {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={18} />}
+              <ArrowUp size={18} />
             </button>
           ) : (
             <button
@@ -296,6 +432,13 @@ export function ChatView({
           )}
         </div>
       </form>
+
+      {voiceMode && (
+        <VoiceMode
+          initialMessages={msgs.map((m) => ({ role: m.role, content: m.content }))}
+          onClose={() => setVoiceMode(false)}
+        />
+      )}
     </main>
   );
 }

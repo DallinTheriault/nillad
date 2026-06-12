@@ -32,7 +32,27 @@ function unwrap(href: string): string {
 
 export type SearchHit = { title: string; url: string; snippet: string };
 
-export async function webSearch(query: string, limit = 5): Promise<SearchHit[]> {
+// Local SearXNG metasearch (private, aggregates Google/Bing/DDG/etc., no per-call
+// rate-limit). Primary backend; falls back to scraping DuckDuckGo if it's down.
+const SEARX = process.env.NILLAD_SEARXNG_URL || "http://host.docker.internal:8888";
+
+async function searxngSearch(query: string, limit: number): Promise<SearchHit[]> {
+  const res = await fetch(
+    `${SEARX}/search?q=${encodeURIComponent(query)}&format=json&language=en&safesearch=0`,
+    { headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
+  );
+  if (!res.ok) throw new Error(`searxng ${res.status}`);
+  const j = (await res.json()) as { results?: { title?: string; url?: string; content?: string }[] };
+  const hits: SearchHit[] = [];
+  for (const r of j.results || []) {
+    if (!r.url || !r.url.startsWith("http") || !r.title) continue;
+    hits.push({ title: stripHtml(r.title), url: r.url, snippet: stripHtml(r.content || "") });
+    if (hits.length >= limit) break;
+  }
+  return hits;
+}
+
+async function ddgSearch(query: string, limit: number): Promise<SearchHit[]> {
   const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
     headers: { "User-Agent": UA, Accept: "text/html" },
   });
@@ -53,6 +73,18 @@ export async function webSearch(query: string, limit = 5): Promise<SearchHit[]> 
   return hits;
 }
 
+export async function webSearch(query: string, limit = 5): Promise<SearchHit[]> {
+  // Prefer local SearXNG; if it errors OR returns nothing, fall back to DDG so a
+  // search never silently dies on one backend.
+  try {
+    const hits = await searxngSearch(query, limit);
+    if (hits.length) return hits;
+  } catch {
+    /* SearXNG unreachable/misconfigured — fall through to DDG */
+  }
+  return ddgSearch(query, limit);
+}
+
 // Fetch a page and return readable-ish text (tags/scripts stripped). Capped so a
 // huge page doesn't blow the model's context.
 export async function fetchReadable(url: string, maxChars = 3000): Promise<string> {
@@ -64,6 +96,78 @@ export async function fetchReadable(url: string, maxChars = 3000): Promise<strin
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<\/(p|div|li|h[1-6]|br)>/gi, "\n");
   return stripHtml(body).slice(0, maxChars);
+}
+
+// ---------- Markets (Yahoo Finance chart endpoint) ----------
+
+// Free, no-key quote: latest price + change vs the previous close. Yahoo's chart
+// endpoint exposes both in `meta`, so one call per symbol gives a real number AND
+// a direction — exactly what a morning briefing needs (headlines alone aren't
+// "market data"). Best-effort: a failed/blocked symbol is just skipped.
+export type Quote = { symbol: string; label: string; price: number; changePct: number };
+
+// Default watchlist: broad market + crypto + gold. Override with NILLAD_TICKERS
+// (comma-separated `SYMBOL:Label` pairs) once Dallin gives his real holdings.
+const DEFAULT_TICKERS: { symbol: string; label: string }[] = [
+  { symbol: "^GSPC", label: "S&P 500" },
+  { symbol: "^IXIC", label: "Nasdaq" },
+  { symbol: "BTC-USD", label: "Bitcoin" },
+  { symbol: "ETH-USD", label: "Ethereum" },
+  { symbol: "GC=F", label: "Gold" },
+];
+
+function configuredTickers(): { symbol: string; label: string }[] {
+  const raw = (process.env.NILLAD_TICKERS || "").trim();
+  if (!raw) return DEFAULT_TICKERS;
+  const out = raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const [symbol, label] = p.split(":").map((s) => s.trim());
+      return { symbol, label: label || symbol };
+    })
+    .filter((t) => t.symbol);
+  return out.length ? out : DEFAULT_TICKERS;
+}
+
+async function fetchQuote(symbol: string, label: string): Promise<Quote | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      chart?: { result?: { meta?: { regularMarketPrice?: number; chartPreviousClose?: number; previousClose?: number } }[] };
+    };
+    const meta = j.chart?.result?.[0]?.meta;
+    const price = meta?.regularMarketPrice;
+    const prev = meta?.previousClose ?? meta?.chartPreviousClose;
+    if (typeof price !== "number" || typeof prev !== "number" || prev === 0) return null;
+    return { symbol, label, price, changePct: ((price - prev) / prev) * 100 };
+  } catch {
+    return null;
+  }
+}
+
+// One-line-per-ticker market snapshot for the briefing material. Returns "" if
+// every symbol failed, so the caller can fall back cleanly.
+export async function getMarketSnapshot(): Promise<string> {
+  const tickers = configuredTickers();
+  const quotes = (await Promise.all(tickers.map((t) => fetchQuote(t.symbol, t.label)))).filter(
+    (q): q is Quote => q !== null,
+  );
+  if (!quotes.length) return "";
+  const fmtPrice = (n: number) =>
+    n >= 1000 ? n.toLocaleString("en-US", { maximumFractionDigits: 0 }) : n.toFixed(2);
+  return quotes
+    .map((q) => {
+      const sign = q.changePct >= 0 ? "+" : "";
+      return `- ${q.label}: ${fmtPrice(q.price)} (${sign}${q.changePct.toFixed(2)}%)`;
+    })
+    .join("\n");
 }
 
 // ---------- Weather (Open-Meteo) ----------

@@ -32,6 +32,20 @@ export async function appendMessage(
   return { ok: true as const };
 }
 
+// Overwrite the most recent assistant message in a chat — used by "Retry" so a
+// regenerated reply replaces the old one instead of stacking a duplicate.
+export async function updateLastAssistant(chatId: number, content: string) {
+  const db = getDb();
+  db.prepare(
+    `UPDATE chat_messages SET content = ?
+     WHERE id = (SELECT id FROM chat_messages
+                 WHERE chat_id = ? AND role = 'assistant'
+                 ORDER BY id DESC LIMIT 1)`,
+  ).run(content, chatId);
+  db.prepare(`UPDATE chats SET updated_at = datetime('now') WHERE id = ?`).run(chatId);
+  return { ok: true as const };
+}
+
 export async function deleteChat(chatId: number) {
   const db = getDb();
   db.prepare(`DELETE FROM chats WHERE id = ?`).run(chatId);

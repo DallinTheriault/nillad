@@ -26,9 +26,9 @@ export default async function ActivityDetailPage({
 
   const tasks = db
     .prepare(
-      `SELECT id, title, done, done_at FROM tasks
+      `SELECT id, title, done, done_at, parent_id FROM tasks
        WHERE activity_id = ?
-       ORDER BY done ASC, sort_order ASC, id ASC`,
+       ORDER BY sort_order ASC, id ASC`,
     )
     .all(activityId) as Task[];
 

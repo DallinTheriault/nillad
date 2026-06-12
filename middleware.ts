@@ -11,6 +11,13 @@ export function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/briefing") || // own key-gate; called by the n8n cron, no session cookie
+    pathname.startsWith("/api/evening") || // own key-gate; evening-review cron, no session cookie
+    pathname.startsWith("/api/email") || // own key-gate; email-sync cron, no session cookie
+    pathname.startsWith("/api/backup") || // own key-gate; nightly DB-backup cron, no session cookie
+    pathname.startsWith("/api/automations") || // own key-gate; daily automations cron, no session cookie
+    pathname.startsWith("/api/contacts/import") || // own auth (cookie OR key) — lets an iOS Shortcut post
+    pathname.startsWith("/api/location") || // own key-gate; iOS Arrive automation, no session cookie
+    pathname.startsWith("/api/stripe") || // signature-verified; Stripe payment webhook, no session cookie
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname === "/manifest.webmanifest" ||

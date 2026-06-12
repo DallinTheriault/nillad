@@ -5,8 +5,8 @@
 // Triggered by an n8n cron hitting /api/briefing/run.
 
 import { getDb } from "@/lib/db";
-import { getWeather } from "@/lib/web";
-import { appendNote } from "@/lib/vault";
+import { getWeather, getMarketSnapshot } from "@/lib/web";
+import { writeNote } from "@/lib/vault";
 import { humanDenver, parseStored } from "@/lib/datetime";
 
 const OLLAMA = process.env.OLLAMA_BASE_URL || "http://host.docker.internal:11434";
@@ -23,13 +23,15 @@ const FEEDS: { label: string; url: string }[] = [
 
 type Item = { title: string; link: string };
 
-async function fetchRss(url: string, n = 6): Promise<Item[]> {
+async function fetchRss(url: string, n = 6, attempt = 0): Promise<Item[]> {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Nillad/1.0 (personal assistant)" },
       signal: AbortSignal.timeout(9000),
     });
-    if (!res.ok) return [];
+    // One retry on a transient failure — a 6:30am cold-start blip used to wipe the
+    // whole news section silently. Better a second try than an empty briefing.
+    if (!res.ok) return attempt < 1 ? fetchRss(url, n, attempt + 1) : [];
     const xml = await res.text();
     const clean = (s: string) =>
       s.replace(/<!\[CDATA\[/g, "").replace(/\]\]>/g, "").replace(/<[^>]+>/g, "").trim();
@@ -44,7 +46,7 @@ async function fetchRss(url: string, n = 6): Promise<Item[]> {
     }
     return out;
   } catch {
-    return [];
+    return attempt < 1 ? fetchRss(url, n, attempt + 1) : [];
   }
 }
 
@@ -99,7 +101,7 @@ function gatherDay(): string {
 
 async function ollamaBrief(material: string): Promise<string> {
   const system =
-    "You are Nillad, writing Dallin's concise morning briefing. Output skimmable Markdown with these sections, in order, and ONLY these: '## Your day', '## Tech', '## Politics', '## Markets'. Under each, 2-5 tight bullets, one line each, plain language, no hype, no preamble, no sign-off. For news bullets, lead with the gist in your own words. Drop a section only if there's truly nothing for it. Do not invent items not present in the material.";
+    "You are Nillad, writing Dallin's concise morning briefing. Output skimmable Markdown with these sections, in order, and ONLY these: '## Your day', '## Tech', '## Politics', '## Markets'. Under each, 2-5 tight bullets, one line each, plain language, no hype, no preamble, no sign-off. For news bullets, lead with the gist in your own words. In '## Markets', LEAD with the quoted numbers from MARKET DATA (e.g. 'S&P 500 6,012 (+0.4%)') as their own bullets, then add market headlines. Use the exact prices and percentages given — never invent or alter a number. Drop a section only if there's truly nothing for it. Do not invent items not present in the material.";
   try {
     const res = await fetch(`${OLLAMA}/api/chat`, {
       method: "POST",
@@ -154,8 +156,9 @@ export async function buildBriefing(): Promise<{ note: string; markdown: string 
     timeZone: "America/Denver",
   }).format(now); // YYYY-MM-DD
 
-  const [weather, ...feedResults] = await Promise.all([
+  const [weather, market, ...feedResults] = await Promise.all([
     getWeather().catch(() => "(weather unavailable)"),
+    getMarketSnapshot().catch(() => ""),
     ...FEEDS.map((f) => fetchRss(f.url)),
   ]);
 
@@ -172,6 +175,8 @@ export async function buildBriefing(): Promise<{ note: string; markdown: string 
     "",
     `=== DALLIN'S DAY ===\n${day}`,
     "",
+    `=== MARKET DATA (use these exact numbers) ===\n${market || "(market data unavailable)"}`,
+    "",
     `=== HEADLINES ===\n${feedBlocks}`,
   ].join("\n");
 
@@ -179,7 +184,8 @@ export async function buildBriefing(): Promise<{ note: string; markdown: string 
   const markdown = `# Morning Briefing — ${dateLabel}\n\n${body}\n`;
 
   // File into the vault (visible to Nillad + Obsidian) and push to phone.
-  appendNote(`Briefings/${dateKey}.md`, markdown);
+  // writeNote (not append) so a same-day re-run replaces rather than duplicates.
+  writeNote(`Briefings/${dateKey}.md`, markdown);
   await pushNtfy(`Nillad — Briefing, ${dateLabel}`, body || "Briefing generated.");
 
   return { note: `Briefings/${dateKey}.md`, markdown };

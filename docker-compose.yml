@@ -17,13 +17,30 @@ services:
     environment:
       - NODE_ENV=production
       - TZ=America/Denver
-      - NILLAD_DB=/vault/nillad.db
+      - NILLAD_DB=${NILLAD_DB:-/vault/nillad.db}
       - N8N_SEND_SMS_WEBHOOK=http://host.docker.internal:5678/webhook/nillad-send-sms
       - NF_SESSION_SECRET=${NF_SESSION_SECRET}
       # Native Nillad chat: the dashboard talks DIRECTLY to Ollama and runs the
       # function-calling tool loop itself (see lib/agent.ts). No OWUI in the path.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - NILLAD_OLLAMA_MODEL=${NILLAD_OLLAMA_MODEL:-gemma4:12b-it-qat}
+      # Morning-briefing watchlist (SYMBOL:Label,…). Empty → code defaults.
+      - NILLAD_TICKERS=${NILLAD_TICKERS:-}
+      # Local SearXNG search backend (private metasearch); DDG is the fallback.
+      - NILLAD_SEARXNG_URL=${NILLAD_SEARXNG_URL:-http://host.docker.internal:8888}
+      # Host shell agent (runs PowerShell on the PC for the Terminal page).
+      - NILLAD_SHELL_AGENT_URL=${NILLAD_SHELL_AGENT_URL:-http://host.docker.internal:7717}
+      # Kokoro neural TTS (voice mode).
+      - NILLAD_TTS_URL=${NILLAD_TTS_URL:-http://host.docker.internal:8880}
+      - NILLAD_TTS_VOICE=${NILLAD_TTS_VOICE:-af_heart}
+      # Business names + letterhead contact details for invoices (real values
+      # come from .env; code defaults to generic placeholders for the public repo).
+      - NILLAD_BIZ_TPS=${NILLAD_BIZ_TPS:-Theriault Property Services LLC}
+      - NILLAD_BIZ_SHARPLINE=${NILLAD_BIZ_SHARPLINE:-Sharpline Painting Co.}
+      - NILLAD_BIZ_ADDRESS=${NILLAD_BIZ_ADDRESS:-}
+      - NILLAD_BIZ_PHONE=${NILLAD_BIZ_PHONE:-}
+      - NILLAD_BIZ_EMAIL=${NILLAD_BIZ_EMAIL:-}
+      - NILLAD_BIZ_VENMO=${NILLAD_BIZ_VENMO:-}
     volumes:
       # Shared vault — same host path n8n & OWUI mount, so the DB is one file.
       # Override the host path with NILLAD_VAULT in your .env if your layout differs.

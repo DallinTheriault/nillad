@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db";
 import { denverInputToIso } from "@/lib/datetime";
+import { createGeoReminder, deleteGeoReminder } from "@/lib/geo";
 
 // The n8n dispatcher polls /vault/nillad.db every minute and ships pending rows
 // whose due_at <= now. So inserting/updating directly here is the full integration.
@@ -68,6 +69,23 @@ export async function reactivateReminder(id: number) {
   db.prepare(
     `UPDATE reminders SET status = 'pending' WHERE id = ? AND status = 'cancelled'`,
   ).run(id);
+  revalidatePath("/reminders");
+  return { ok: true };
+}
+
+// ---- Location reminders ----
+export async function addGeoReminder(place: string, text: string, repeat: boolean) {
+  try {
+    createGeoReminder(place, text, repeat);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Couldn’t save." };
+  }
+  revalidatePath("/reminders");
+  return { ok: true };
+}
+
+export async function removeGeoReminder(id: number) {
+  deleteGeoReminder(id);
   revalidatePath("/reminders");
   return { ok: true };
 }

@@ -28,3 +28,6 @@ STATUS.md
 scripts/fix-*.cjs
 scripts/publish-*.cjs
 scripts/test-inbound-signed.cjs
+
+# Local component backups
+*.bak

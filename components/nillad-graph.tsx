@@ -302,13 +302,15 @@ export function NilladGraph({ recent = [] }: { recent?: string[] }) {
     const k = 0.018; // responsive 1:1 thumb tracking
     const dx = (e.clientX - last.current.x) * k;
     const dy = (e.clientY - last.current.y) * k;
-    rot.current.y += dx;
-    rot.current.x += dy;
+    // Inverted control — the sphere rolls OPPOSITE the thumb (swipe up → top rolls
+    // down/toward you), like spinning a globe from the far side.
+    rot.current.y -= dx;
+    rot.current.x -= dy;
     // smoothed + clamped throw so a quick wiggle can't fling it a quarter turn
     const clamp = (v: number) => Math.max(-0.04, Math.min(0.04, v));
     vel.current = {
-      x: clamp(vel.current.x * 0.5 + dy * 0.5),
-      y: clamp(vel.current.y * 0.5 + dx * 0.5),
+      x: clamp(vel.current.x * 0.5 - dy * 0.5),
+      y: clamp(vel.current.y * 0.5 - dx * 0.5),
     };
     last.current = { x: e.clientX, y: e.clientY };
   }
